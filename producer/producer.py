@@ -1,3 +1,4 @@
+﻿from pathlib import Path
 import csv
 import gzip
 import io
@@ -12,8 +13,8 @@ from kafka import KafkaProducer
 # ============================================================
 # CONFIGURATION
 # ============================================================
-
-ZIP_PATH = r"C:\Users\kusha\OneDrive\Desktop\RTSED\data\stocks_1m_csvs.zip"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ZIP_PATH = PROJECT_ROOT / "data" / "stocks_1m_csvs.zip"
 
 KAFKA_SERVER = "localhost:9092"
 KAFKA_TOPIC = "stock_data"
@@ -223,3 +224,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

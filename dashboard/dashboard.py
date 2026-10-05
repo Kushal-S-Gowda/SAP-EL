@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -27,7 +27,8 @@ DB_CONFIG = {
 KAFKA_BOOTSTRAP = "localhost:9092"
 INPUT_TOPIC = "stock_data"
 OUTPUT_TOPIC = "stock_events"
-CHECKPOINT_PATH = Path(r"C:\Users\kusha\OneDrive\Desktop\RTSED\streaming\checkpoint")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CHECKPOINT_PATH = PROJECT_ROOT / "streaming" / "checkpoint"
 REFRESH_SECONDS = 5
 
 
@@ -37,7 +38,7 @@ REFRESH_SECONDS = 5
 
 st.set_page_config(
     page_title="RTSED | Real-Time Stock Event Detection",
-    page_icon="📈",
+    page_icon="ðŸ“ˆ",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -69,7 +70,7 @@ st.markdown(
 st.markdown(
     """
     <div class="hero">
-        <h1 style="margin-bottom:.25rem;">📈 Real-Time Stock Market Event Detection</h1>
+        <h1 style="margin-bottom:.25rem;">ðŸ“ˆ Real-Time Stock Market Event Detection</h1>
         <div class="muted">
             Course: Stream Processing and Analytics &nbsp;|&nbsp;
             Kafka + Spark Structured Streaming + PostgreSQL + Streamlit
@@ -91,6 +92,7 @@ def db_connect():
 @st.cache_data(ttl=3)
 def load_events():
     conn = db_connect()
+
     query = """
         SELECT
             id,
@@ -106,10 +108,17 @@ def load_events():
         FROM stock_events
         ORDER BY id DESC
     """
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-    return df
 
+    cur = conn.cursor()
+    cur.execute(query)
+
+    rows = cur.fetchall()
+    columns = [desc[0] for desc in cur.description]
+
+    cur.close()
+    conn.close()
+
+    return pd.DataFrame(rows, columns=columns)
 
 def db_status():
     try:
@@ -230,7 +239,7 @@ def checkpoint_info():
 
 
 def component_card(title, status, detail):
-    symbol = "🟢" if status else "🔴"
+    symbol = "ðŸŸ¢" if status else "ðŸ”´"
     st.markdown(
         f"""
         <div class="component">
@@ -290,21 +299,21 @@ with st.sidebar:
     st.markdown(
         """
         **Historical Data**  
-        ↓  
+        â†“  
         **Kafka Producer**  
-        ↓  
+        â†“  
         **`stock_data`**  
-        ↓  
+        â†“  
         **Spark Structured Streaming**  
-        ↓  
+        â†“  
         **1-minute Window + Aggregation**  
-        ↓  
+        â†“  
         **Event Detection**  
-        ↓  
+        â†“  
         **`stock_events`**  
-        ↓  
+        â†“  
         **PostgreSQL**  
-        ↓  
+        â†“  
         **Streamlit + Plotly**
         """
     )
@@ -327,14 +336,14 @@ with st.sidebar:
 
 tabs = st.tabs(
     [
-        "🏠 Overview",
-        "🔄 Complete Pipeline",
-        "📨 Kafka",
-        "⚡ Stream Processing",
-        "🗄️ Storage & Events",
-        "🛡️ Fault Tolerance",
-        "📊 Analytics",
-        "📋 Methodology",
+        "ðŸ  Overview",
+        "ðŸ”„ Complete Pipeline",
+        "ðŸ“¨ Kafka",
+        "âš¡ Stream Processing",
+        "ðŸ—„ï¸ Storage & Events",
+        "ðŸ›¡ï¸ Fault Tolerance",
+        "ðŸ“Š Analytics",
+        "ðŸ“‹ Methodology",
     ]
 )
 
@@ -361,7 +370,7 @@ with tabs[0]:
     )
     c4.metric(
         "Latest Event",
-        str(latest_event)[:19] if latest_event else "—",
+        str(latest_event)[:19] if latest_event else "â€”",
     )
 
     st.markdown("### Component Health")
@@ -384,13 +393,13 @@ with tabs[0]:
 
     flow = st.columns(7)
     labels = [
-        ("📁", "Dataset"),
-        ("📤", "Producer"),
-        ("🟦", "Kafka"),
-        ("⚡", "Spark"),
-        ("🚨", "Detection"),
-        ("🗄️", "PostgreSQL"),
-        ("📊", "Dashboard"),
+        ("ðŸ“", "Dataset"),
+        ("ðŸ“¤", "Producer"),
+        ("ðŸŸ¦", "Kafka"),
+        ("âš¡", "Spark"),
+        ("ðŸš¨", "Detection"),
+        ("ðŸ—„ï¸", "PostgreSQL"),
+        ("ðŸ“Š", "Dashboard"),
     ]
 
     for col, (icon, label) in zip(flow, labels):
@@ -438,17 +447,17 @@ with tabs[1]:
     architecture = [
         ("1", "Historical Stock Dataset", "1-minute NSE F&O OHLCV data", True),
         ("2", "Python Kafka Producer", "Reads, validates and serializes records as JSON", kafka_ok),
-        ("3", "Kafka: stock_data", "3 partitions • keyed by symbol", INPUT_TOPIC in kafka_topics),
-        ("4", "Spark Structured Streaming", "Kafka consumer • streaming transformations", cp["exists"]),
+        ("3", "Kafka: stock_data", "3 partitions â€¢ keyed by symbol", INPUT_TOPIC in kafka_topics),
+        ("4", "Spark Structured Streaming", "Kafka consumer â€¢ streaming transformations", cp["exists"]),
         ("5", "Window + Aggregation", "1-minute tumbling window", cp["state"]),
         ("6", "Event Detection", "Price spike / volume surge", len(events) > 0),
-        ("7", "Kafka: stock_events", "3 partitions • detected events", OUTPUT_TOPIC in kafka_topics),
+        ("7", "Kafka: stock_events", "3 partitions â€¢ detected events", OUTPUT_TOPIC in kafka_topics),
         ("8", "PostgreSQL", "Persistent processed-event storage", db_ok),
         ("9", "Streamlit + Plotly", "Real-time analytics and visualization", True),
     ]
 
     for num, name, detail, ok in architecture:
-        icon = "🟢" if ok else "🔴"
+        icon = "ðŸŸ¢" if ok else "ðŸ”´"
         st.markdown(
             f"""
             <div class="component" style="margin-bottom:.55rem;">
@@ -463,17 +472,17 @@ with tabs[1]:
 
     requirements = pd.DataFrame(
         [
-            ["Apache Kafka central platform", "stock_data + stock_events", "✅"],
-            ["Producer", "Python KafkaProducer", "✅"],
-            ["Consumer", "Spark Structured Streaming Kafka source", "✅"],
-            ["Two Kafka topics", "stock_data / stock_events", "✅"],
-            ["Partitioning", "3 partitions per topic", "✅"],
-            ["Consumer groups", "Kafka group listing visible in Kafka tab", "✅/inspect"],
-            ["Window operation", "1-minute tumbling window", "✅"],
-            ["Aggregation", "avg close / total volume / avg change / count", "✅"],
-            ["Fault tolerance", "Persistent Spark checkpoint + Kafka offsets", "✅"],
-            ["Database", "PostgreSQL", "✅"],
-            ["Real-time visualization", "Streamlit + Plotly + auto-refresh", "✅"],
+            ["Apache Kafka central platform", "stock_data + stock_events", "âœ…"],
+            ["Producer", "Python KafkaProducer", "âœ…"],
+            ["Consumer", "Spark Structured Streaming Kafka source", "âœ…"],
+            ["Two Kafka topics", "stock_data / stock_events", "âœ…"],
+            ["Partitioning", "3 partitions per topic", "âœ…"],
+            ["Consumer groups", "Kafka group listing visible in Kafka tab", "âœ…/inspect"],
+            ["Window operation", "1-minute tumbling window", "âœ…"],
+            ["Aggregation", "avg close / total volume / avg change / count", "âœ…"],
+            ["Fault tolerance", "Persistent Spark checkpoint + Kafka offsets", "âœ…"],
+            ["Database", "PostgreSQL", "âœ…"],
+            ["Real-time visualization", "Streamlit + Plotly + auto-refresh", "âœ…"],
         ],
         columns=["Course Requirement", "Implementation Evidence", "Status"],
     )
@@ -495,11 +504,11 @@ with tabs[2]:
     st.markdown("### Topic Partitioning")
 
     if not stock_topic_df.empty:
-        st.markdown("**`stock_data` — input topic**")
+        st.markdown("**`stock_data` â€” input topic**")
         st.dataframe(stock_topic_df, width='stretch', hide_index=True)
 
     if not event_topic_df.empty:
-        st.markdown("**`stock_events` — output topic**")
+        st.markdown("**`stock_events` â€” output topic**")
         st.dataframe(event_topic_df, width='stretch', hide_index=True)
 
     st.markdown("### Kafka Data Movement")
@@ -568,25 +577,25 @@ with tabs[3]:
 
     st.code(
         """Kafka stock_data
-      ↓
+      â†“
 Parse JSON
-      ↓
+      â†“
 Validate / cast fields
-      ↓
+      â†“
 1-minute tumbling window
-      ↓
+      â†“
 Group by symbol + window
-      ↓
+      â†“
 Aggregate:
-  • average close
-  • total volume
-  • average price change
-  • record count
-      ↓
+  â€¢ average close
+  â€¢ total volume
+  â€¢ average price change
+  â€¢ record count
+      â†“
 Event rules
-  • PRICE_SPIKE
-  • VOLUME_SURGE
-      ↓
+  â€¢ PRICE_SPIKE
+  â€¢ VOLUME_SURGE
+      â†“
 Kafka stock_events + PostgreSQL""",
         language="text",
     )
@@ -699,7 +708,7 @@ with tabs[5]:
         ],
         columns=["Component", "Location", "Present"],
     )
-    cp_df["Status"] = cp_df["Present"].map(lambda x: "🟢 Present" if x else "🔴 Missing")
+    cp_df["Status"] = cp_df["Present"].map(lambda x: "ðŸŸ¢ Present" if x else "ðŸ”´ Missing")
     st.dataframe(
         cp_df.drop(columns=["Present"]),
         width='stretch',
@@ -713,18 +722,18 @@ with tabs[5]:
 
     st.code(
         """NORMAL RUN
-Kafka → Spark → PostgreSQL
-        ↓
+Kafka â†’ Spark â†’ PostgreSQL
+        â†“
 checkpoint stores offsets + state
 
 SPARK STOPPED
-        ↓
+        â†“
 application restarted
-        ↓
+        â†“
 same checkpoint reused
-        ↓
+        â†“
 Spark resumes from committed streaming progress
-        ↓
+        â†“
 previously processed events are not duplicated
         """,
         language="text",
@@ -806,12 +815,12 @@ with tabs[6]:
         latest = events.iloc[0]
         if latest["event_type"] == "PRICE_SPIKE":
             st.error(
-                f"🚨 PRICE SPIKE — {latest['symbol']} | "
+                f"ðŸš¨ PRICE SPIKE â€” {latest['symbol']} | "
                 f"{latest['avg_price_change_pct']:.3f}% average price change"
             )
         else:
             st.warning(
-                f"📢 VOLUME SURGE — {latest['symbol']} | "
+                f"ðŸ“¢ VOLUME SURGE â€” {latest['symbol']} | "
                 f"{latest['total_volume']:,} total volume"
             )
 
@@ -851,8 +860,8 @@ with tabs[7]:
 
         ### Technologies
 
-        **Python · Apache Kafka · Apache Spark Structured Streaming · PostgreSQL ·
-        Streamlit · Plotly · Docker**
+        **Python Â· Apache Kafka Â· Apache Spark Structured Streaming Â· PostgreSQL Â·
+        Streamlit Â· Plotly Â· Docker**
 
         ### Important Experimental Design Choice
 
@@ -872,3 +881,5 @@ if live_mode:
     import time
     time.sleep(REFRESH_SECONDS)
     st.rerun()
+
+

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import json
 import psycopg2
 
@@ -53,10 +54,8 @@ spark.sparkContext.setLogLevel("WARN")
 
 KAFKA_SERVER = "localhost:9092"
 INPUT_TOPIC = "stock_data"
-
-CHECKPOINT_PATH = (
-    r"C:\Users\kusha\OneDrive\Desktop\RTSED\streaming\checkpoint"
-)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CHECKPOINT_PATH = str(PROJECT_ROOT / "streaming" / "checkpoint")
 POSTGRES_HOST = "localhost"
 POSTGRES_PORT = 5432
 POSTGRES_DB = "rtsed"
