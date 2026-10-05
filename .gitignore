@@ -1,0 +1,42 @@
+@"
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Dataset
+data/*.zip
+data/*.csv
+data/*.csv.gz
+
+# Generated EDA outputs
+eda_results/
+
+# Spark runtime/checkpoint state
+streaming/checkpoint/
+streaming/checkpoint_*/
+**/checkpoint/
+**/checkpoints/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Local environment/config
+.env
+
+# Python cache
+.pytest_cache/
+"@ | Set-Content .gitignore
