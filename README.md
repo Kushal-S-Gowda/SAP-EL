@@ -7,7 +7,7 @@ The system detects unusual stock-market events from 1-minute OHLCV data using **
 ## Architecture
 
 ```text
-Historical 1-minute stock dataset
+Yahoo Finance 1-minute polling or historical dataset replay
             â†“
       Python Kafka Producer
             â†“
@@ -284,7 +284,7 @@ The processing includes:
 
 Leave this terminal running.
 
-## 7. Start the producer
+## 7. Start one producer
 
 Open **Terminal 2**:
 
@@ -294,13 +294,23 @@ cd RTSED
 python producer/producer.py
 ```
 
-The producer reads the dataset and sends normalized JSON records to:
+The default producer polls Yahoo Finance every 60 seconds for the configured
+NSE watchlist and sends finalized 1-minute candles to:
 
 ```text
 stock_data
 ```
 
-The Kafka message key is the stock symbol, which allows symbol-based partitioning.
+To replay the downloaded historical archive instead, stop the Yahoo producer
+first and run this in Terminal 2:
+
+```powershell
+python producer/historical_replay.py
+```
+
+The replay preserves the previous 1,000-record default. Set
+`$env:RTSED_REPLAY_MAX_RECORDS="0"` to replay the full archive.
+Do not run both producers simultaneously.
 
 ## 8. Start the dashboard
 
@@ -387,6 +397,62 @@ RTSED/
 â””â”€â”€ README.md
 ```
 
+The `producer` directory contains the Yahoo polling producer and the separate
+historical replay command.
+
+### Yahoo Finance polling and limitations
+
+`producer/producer.py` uses the unofficial `yfinance` Python interface. It
+requires no Yahoo account, API key, or paid subscription. The dependency is
+installed with `requirements.txt` (`yfinance>=0.2.54,<2`).
+
+The default watchlist is `RELIANCE.NS`, `TCS.NS`, `INFY.NS`, `HDFCBANK.NS`,
+and `ICICIBANK.NS`. Configure it in PowerShell before starting the producer:
+
+```powershell
+$env:RTSED_STOCKS="RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS"
+$env:RTSED_POLL_INTERVAL_SECONDS="60"
+python producer/producer.py
+```
+
+Edit the comma-separated `RTSED_STOCKS` value to add or remove tickers. The
+producer requests `period="1d"` at `interval="1m"` and polls every 60 seconds
+by default. Each pass considers only the most recent 10 minutes of overlapping
+history, sorts eligible candles by their market timestamp, and withholds candles
+younger than two minutes so a possibly incomplete minute is not published.
+Timestamps are normalized to UTC ISO-8601 while retaining the Spark-compatible
+`timestamp` field. The Kafka key remains the stock symbol.
+
+Yahoo Finance is not a guaranteed real-time NSE feed. Quotes may be delayed;
+one-minute history is limited to a recent intraday period, revisions and gaps
+are possible, and Yahoo may rate-limit requests or become unavailable. No data
+is fabricated. Empty responses are skipped, failed requests are retried up to
+three times with exponential backoff, and one symbol's failure does not prevent
+other symbols from being polled. During downtime longer than the 10-minute
+overlap, candles may be missed; use historical replay when appropriate.
+
+The producer stores successfully acknowledged candle identifiers
+`(symbol, timestamp)` in `producer/state/published_candles.sqlite3`. This
+deduplicates across polling cycles and normal restarts. SQLite state is local
+and ignored by Git. Kafka publishing and SQLite writes cannot be one atomic
+transaction: a crash after Kafka acknowledges a message but before SQLite
+records it can cause that candle to be sent again after restart. The producer
+does not claim exactly-once delivery; downstream idempotency may still be
+needed. Kafka failures are logged and failed messages are not marked as sent.
+
+Install dependencies from the project root in PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+The existing startup order remains unchanged: run `docker compose up -d`,
+create the two three-partition topics with `.\scripts\setup_kafka.ps1`, start
+`python streaming/spark_stream.py`, start one producer (Yahoo or historical),
+and then start `streamlit run dashboard/dashboard.py`. Spark parses event
+timestamps in UTC; its existing schema, watermark, aggregation, event
+thresholds, Kafka topics, and PostgreSQL integration are otherwise unchanged.
+
 ## Kafka design
 
 ### `stock_data`
@@ -399,7 +465,8 @@ Producer â†’ stock_data â†’ Spark
 
 - 3 partitions
 - message key = stock symbol
-- JSON payload
+- JSON payload containing `timestamp`, `symbol`, `open`, `high`, `low`, `close`,
+  and `volume`
 
 ### `stock_events`
 
@@ -517,9 +584,9 @@ Avoid committing:
 
 | Requirement | Implementation |
 |---|---|
-| Data Source | NSE F&O 1-minute stock dataset |
+| Data Source | Yahoo Finance NSE polling; optional historical ZIP replay |
 | Kafka | Apache Kafka |
-| Producer | `producer/producer.py` |
+| Producer | `producer/producer.py`; `producer/historical_replay.py` |
 | Consumer | Spark Structured Streaming |
 | Two Kafka topics | `stock_data`, `stock_events` |
 | Partitioning | 3 partitions per topic |

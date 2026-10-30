@@ -38,6 +38,7 @@ spark = (
     SparkSession.builder
     .appName("RTSED-Stock-Event-Detection")
     .master("local[2]")
+    .config("spark.sql.session.timeZone", "UTC")
     .config(
         "spark.jars.packages",
         "org.apache.spark:spark-sql-kafka-0-10_2.13:4.0.1"

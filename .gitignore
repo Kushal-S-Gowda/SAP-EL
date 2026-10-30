@@ -1,4 +1,3 @@
-@"
 # Python
 __pycache__/
 *.py[cod]
@@ -39,4 +38,9 @@ Thumbs.db
 
 # Python cache
 .pytest_cache/
-"@ | Set-Content .gitignore
+
+# Yahoo Finance producer state
+producer/state/
+*.sqlite
+*.sqlite3
+*.db
