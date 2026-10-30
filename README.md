@@ -363,20 +363,32 @@ They do **not** start Docker, Kafka, Spark, Yahoo’s network, or Ollama. Live p
 
 ```text
 RTSED/
-├── agent/                      # Stock Event Investigation Agent
-├── dashboard/dashboard.py
-├── database/schema.sql         # idempotent migrations
-├── database/migrate.py
-├── producer/
-│   ├── producer.py             # LIVE Yahoo polling
-│   ├── demo_replay.py          # cached Yahoo candles
-│   ├── historical_replay.py    # NSE ZIP replay
-│   └── providers/              # MarketDataProvider + Yahoo
-├── streaming/spark_stream.py
-├── tests/
-├── scripts/setup_kafka.ps1
-├── docker-compose.yml
-├── .env.example
+├── agent/                      # Investigation consumer, tools, LLM, and persistence
+├── dashboard/dashboard.py      # Streamlit dashboard
+├── database/                   # PostgreSQL connection, schema, and migration
+├── producer/                   # Live, cached-demo, and historical producers
+│   ├── providers/              # Market-data provider interface and Yahoo client
+│   ├── candle_cache.py
+│   ├── demo_replay.py
+│   ├── historical_replay.py
+│   ├── ohlcv.py
+│   ├── producer.py
+│   ├── publisher.py
+│   ├── sink.py
+│   ├── state_store.py
+│   └── status.py
+├── streaming/spark_stream.py   # Spark Structured Streaming and event detection
+├── tests/                      # Unit tests; no live services required
+├── scripts/setup_kafka.ps1     # Kafka topic setup
+├── data/                       # Local historical dataset (not tracked)
+├── eda_results/                # Generated analysis output (not tracked)
+├── config.py                   # Shared environment configuration
+├── docker-compose.yml          # Local Kafka and PostgreSQL
+├── eda.py                      # Dataset exploration scripts
+├── eda_statistics.py
+├── inspect_dataset.py
+├── profile_dataset.py
+├── .env.example                # Copy to local, gitignored .env
 ├── requirements.txt
 └── README.md
 ```
@@ -437,7 +449,7 @@ Start Kafka/PostgreSQL, Spark, and exactly one producer.
 
 ### AI investigations stay PENDING or FAILED
 
-Start Ollama, confirm `ollama list` includes `llama3.1`, and leave `python agent/consumer.py` running. Spark events should still appear.
+Start Ollama, confirm `ollama list` includes the model selected by `OLLAMA_MODEL` (default: `llama3.2`), and leave `python agent/consumer.py` running. Spark events should still appear.
 
 ### Demo replay says the cache is empty
 
