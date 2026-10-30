@@ -1,7 +1,14 @@
 import os
+import sys
 from pathlib import Path
 import json
 import psycopg2
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import config
 
 # Windows Hadoop configuration
 os.environ["HADOOP_HOME"] = r"C:\hadoop"
@@ -53,15 +60,24 @@ spark.sparkContext.setLogLevel("WARN")
 # CONFIGURATION
 # ============================================================
 
-KAFKA_SERVER = "localhost:9092"
-INPUT_TOPIC = "stock_data"
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+KAFKA_SERVER = config.KAFKA_BOOTSTRAP_SERVERS
+INPUT_TOPIC = config.STOCK_DATA_TOPIC
+PROJECT_ROOT = ROOT
 CHECKPOINT_PATH = str(PROJECT_ROOT / "streaming" / "checkpoint")
-POSTGRES_HOST = "localhost"
-POSTGRES_PORT = 5432
-POSTGRES_DB = "rtsed"
-POSTGRES_USER = "rtsed_user"
-POSTGRES_PASSWORD = "rtsed_password"
+CHECKPOINT_POSTGRES_PATH = str(PROJECT_ROOT / "streaming" / "checkpoint_postgres")
+POSTGRES_HOST = config.POSTGRES_HOST
+POSTGRES_PORT = config.POSTGRES_PORT
+POSTGRES_DB = config.POSTGRES_DB
+POSTGRES_USER = config.POSTGRES_USER
+POSTGRES_PASSWORD = config.POSTGRES_PASSWORD
+
+try:
+    from database.db import apply_schema
+
+    apply_schema()
+    print("PostgreSQL schema ready")
+except Exception as error:
+    print("PostgreSQL schema could not be applied:", error)
 
 # ============================================================
 # STOCK DATA SCHEMA
@@ -305,7 +321,7 @@ postgres_query = (
         .foreachBatch(write_to_postgres)
         .option(
             "checkpointLocation",
-            r"C:\Users\kusha\OneDrive\Desktop\RTSED\streaming\checkpoint_postgres"
+            CHECKPOINT_POSTGRES_PATH
         )
         .outputMode("append")
         .start()

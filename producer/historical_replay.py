@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 import csv
 import gzip
@@ -10,15 +11,23 @@ from datetime import datetime, timezone
 
 from kafka import KafkaProducer
 
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import config
+from producer.sink import store_pipeline_status, store_published_candles
+from producer.status import write_status
+
 
 # ============================================================
 # CONFIGURATION
 # ============================================================
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = ROOT
 ZIP_PATH = PROJECT_ROOT / "data" / "stocks_1m_csvs.zip"
 
-KAFKA_SERVER = "localhost:9092"
-KAFKA_TOPIC = "stock_data"
+KAFKA_SERVER = config.KAFKA_BOOTSTRAP_SERVERS
+KAFKA_TOPIC = config.STOCK_DATA_TOPIC
 
 # First test: only send 1,000 real records
 MAX_RECORDS = int(os.getenv("RTSED_REPLAY_MAX_RECORDS", "1000"))
@@ -26,7 +35,7 @@ MAX_RECORDS = int(os.getenv("RTSED_REPLAY_MAX_RECORDS", "1000"))
 # Delay between records.
 # 0 = fastest possible.
 # 0.01 = approximately 100 records/second.
-REPLAY_DELAY = 0.01
+REPLAY_DELAY = float(os.getenv("RTSED_REPLAY_DELAY", "0.01"))
 
 
 # ============================================================
@@ -81,6 +90,7 @@ def main():
 
     records_sent = 0
     records_skipped = 0
+    pending_candles = []
     producer = KafkaProducer(
         bootstrap_servers=KAFKA_SERVER,
         key_serializer=lambda key: key.encode("utf-8"),
@@ -89,7 +99,7 @@ def main():
 
     print("=" * 60)
     print("REAL-TIME STOCK EVENT DETECTION")
-    print("Kafka Producer")
+    print("Historical Replay Producer (NOT live market data)")
     print("=" * 60)
 
     print(f"Dataset : {ZIP_PATH}")
@@ -163,7 +173,8 @@ def main():
                                 "high": high_price,
                                 "low": low_price,
                                 "close": close_price,
-                                "volume": volume
+                                "volume": volume,
+                                "source_mode": "HISTORICAL",
                             }
 
                             # Symbol is used as Kafka key.
@@ -172,12 +183,15 @@ def main():
                                 key=symbol,
                                 value=record
                             )
-
+                            pending_candles.append(record)
                             records_sent += 1
 
                             if records_sent % 100 == 0:
 
                                 producer.flush()
+                                if pending_candles:
+                                    store_published_candles(pending_candles)
+                                    pending_candles = []
 
                                 print(
                                     f"  Sent: {records_sent} records"
@@ -202,6 +216,8 @@ def main():
                 break
 
     producer.flush()
+    if pending_candles:
+        store_published_candles(pending_candles)
     producer.close()
 
     print()
@@ -211,6 +227,24 @@ def main():
 
     print(f"Records sent    : {records_sent}")
     print(f"Records skipped : {records_skipped}")
+    status = {
+        "operating_mode": "HISTORICAL",
+        "provider": "nse_zip_replay",
+        "watchlist_count": None,
+        "last_successful_fetch": None,
+        "latest_candle_timestamp": None,
+        "last_published_count": records_sent,
+        "last_error": None,
+        "limitations": (
+            "Historical ZIP replay is a secondary source for tests and "
+            "demonstrations. It is not live market data."
+        ),
+    }
+    write_status(config.STATUS_FILE, status)
+    try:
+        store_pipeline_status(status)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

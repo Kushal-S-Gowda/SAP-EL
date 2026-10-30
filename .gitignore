@@ -39,8 +39,12 @@ Thumbs.db
 # Python cache
 .pytest_cache/
 
-# Yahoo Finance producer state
+# Yahoo Finance producer state and local caches
 producer/state/
 *.sqlite
 *.sqlite3
 *.db
+
+# Test / tool caches
+.pytest_cache/
+.cache/
