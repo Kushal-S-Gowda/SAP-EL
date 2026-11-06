@@ -131,28 +131,18 @@ Severity bands (agent, documented):
 
 ### Ollama setup (Windows PowerShell)
 
-Install Ollama from https://ollama.com, then:
+Ollama is optional for the Kafka/Spark pipeline, but it must be running for the investigation agent to produce completed AI reports. Install Ollama from [ollama.com](https://ollama.com), then open PowerShell and run:
 
 ```powershell
 ollama --version
 ollama pull llama3.2
 ollama list
+Invoke-RestMethod http://localhost:11434/api/tags
 ```
 
-The default model is `llama3.2` because it is commonly already installed. For stronger tool calling:
+The Windows Ollama app normally starts its local server automatically. If the API check cannot connect, start the Ollama app. Alternatively, run `ollama serve` in a separate PowerShell window; do not run it if the app/server is already running.
 
-```powershell
-ollama pull llama3.1
-$env:OLLAMA_MODEL="llama3.1"
-```
-
-Not every Ollama model supports native tools; if the selected model does not, the agent falls back to a strict JSON tool-call protocol. If that also fails, the investigation is `FAILED` and retryable.
-
-```powershell
-$env:AI_PROVIDER="ollama"
-$env:OLLAMA_BASE_URL="http://localhost:11434"
-$env:OLLAMA_MODEL="llama3.2"
-```
+The configured default model is `llama3.2`. To use `llama3.1` instead, download it and set `OLLAMA_MODEL` to `llama3.1` in the agent terminal below. Not every model supports native tools; the agent falls back to a strict JSON tool-call protocol, and marks the investigation failed/retryable if that also fails.
 
 ## Database migrations
 
@@ -175,7 +165,7 @@ Apply schema before the agent and dashboard. The dashboard and agent also call t
 Copy `.env.example` to `.env` (gitignored). Defaults match the Docker Compose Postgres/Kafka settings. Do not commit secrets.
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
 ## Prerequisites
@@ -225,70 +215,64 @@ Test-Path C:\hadoop\bin\winutils.exe
 
 It should return `True`.
 
-## Windows PowerShell installation
+## Windows PowerShell setup and four-terminal runbook
+
+Run commands from the project root. You can open the project folder in VS Code and use **Terminal > New Terminal**. The first setup is done once; each new PowerShell terminal must activate the virtual environment before running Python commands.
+
+### One-time Python setup
 
 ```powershell
+python --version
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-If PowerShell blocks activation:
+If PowerShell blocks virtual-environment activation, run this once, then reopen PowerShell and activate the environment:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-## Complete startup procedure
+Do not overwrite an existing `.env`; it may contain your local settings. The `.env` file is gitignored.
 
-Every fresh run:
+### Start the project
 
-```text
-1. Docker (Kafka + PostgreSQL)
-        ↓
-2. Kafka topics
-        ↓
-3. Database schema
-        ↓
-4. Spark Structured Streaming
-        ↓
-5. Exactly one producer (live OR demo OR historical)
-        ↓
-6. Investigation agent
-        ↓
-7. Streamlit dashboard
-```
+Start Docker Desktop first and wait until it is running. Then use these four PowerShell terminals, all opened at the project root. Keep each terminal running while you use the project.
 
-### 1–3. Infrastructure
+#### Terminal 1 — Docker, Kafka, database, and Spark
 
-```powershell
-docker compose up -d
-.\scripts\setup_kafka.ps1
-python database/migrate.py
-```
-
-You should see containers `rtsed-kafka` and `rtsed-postgres`.
-
-Topics: `stock_data`, `stock_events` (3 partitions each).
-
-Database defaults: `rtsed` / `rtsed_user` / `rtsed_password` on `localhost:5432`.
-
-### 4. Spark (Terminal 1)
+This terminal starts the containers and services, then runs Spark:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
+docker compose up -d
+docker compose ps
+.\scripts\setup_kafka.ps1
+python database/migrate.py
 $env:HADOOP_HOME="C:\hadoop"
 $env:PATH="$env:HADOOP_HOME\bin;$env:PATH"
+if (-not (Test-Path C:\hadoop\bin\winutils.exe)) { throw "winutils.exe is missing; complete the Windows Spark / Hadoop setup first." }
 python streaming/spark_stream.py
 ```
 
-Leave this terminal running. Thresholds, watermark (2 minutes), and 1-minute tumbling windows are unchanged.
+The winutils check stops the command sequence if `C:\hadoop\bin\winutils.exe` is missing; complete the [Windows Spark / Hadoop setup](#windows-spark--hadoop-setup) first. Leave Spark running. `docker compose up -d` starts Kafka and PostgreSQL in the background; the terminal can continue running Spark.
 
-### 5. One producer (Terminal 2)
+Kafka topics are `stock_data` and `stock_events`, each with three partitions. PostgreSQL defaults are `rtsed` / `rtsed_user` / `rtsed_password` on `localhost:5432`.
 
-Live Yahoo polling (primary):
+#### Terminal 2 — Choose exactly one data producer
+
+Activate the virtual environment first:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Then choose **one** of these modes. Do not start multiple producers at the same time.
+
+**Option A: Live Yahoo Finance polling** — use during NSE market hours:
 
 ```powershell
 $env:RTSED_STOCKS="RELIANCE.NS,TCS.NS,INFY.NS,HDFCBANK.NS,ICICIBANK.NS"
@@ -296,35 +280,55 @@ $env:RTSED_POLL_INTERVAL_SECONDS="60"
 python producer/producer.py
 ```
 
-After-hours demo of **cached genuine Yahoo candles**:
+Yahoo data may be delayed or incomplete; it is not guaranteed zero-delay exchange data. Outside market hours, the live producer can cache finalized Yahoo candles for later demo replay but does not publish hours-old candles as live.
+
+**Option B: After-hours demo replay** — replays genuine Yahoo candles previously saved in the local cache:
 
 ```powershell
+Test-Path producer/state/yahoo_candle_cache.sqlite3
 python producer/demo_replay.py
 ```
 
-Historical ZIP (secondary):
+If the cache file does not exist or is empty, collect candles with the live producer during market hours first. Do not fabricate data.
+
+**Option C: Historical dataset replay** — use the course dataset:
 
 ```powershell
+Test-Path data/stocks_1m_csvs.zip
 python producer/historical_replay.py
 ```
 
-Default historical limit is 1,000 records. `$env:RTSED_REPLAY_MAX_RECORDS="0"` replays the full archive.
-
-### 6. Agent (Terminal 3)
+The archive must be present at `data/stocks_1m_csvs.zip`. The default replay limit is 1,000 records. To replay the full archive, set this before starting the producer:
 
 ```powershell
+$env:RTSED_REPLAY_MAX_RECORDS="0"
+python producer/historical_replay.py
+```
+
+Label the run as historical; do not mix it with genuine Yahoo candles in the same demonstration.
+
+#### Terminal 3 — Investigation agent
+
+Complete the [Ollama setup](#ollama-setup-windows-powershell) first. Then run:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+$env:AI_PROVIDER="ollama"
+$env:OLLAMA_BASE_URL="http://localhost:11434"
+$env:OLLAMA_MODEL="llama3.2"
 python agent/consumer.py
 ```
 
-### 7. Dashboard (Terminal 4)
+Leave the agent running. To use the alternative model, first run `ollama pull llama3.1`, then change the model line to `$env:OLLAMA_MODEL="llama3.1"`.
+
+#### Terminal 4 — Streamlit dashboard
 
 ```powershell
+.\.venv\Scripts\Activate.ps1
 streamlit run dashboard/dashboard.py
 ```
 
-Open `http://localhost:8501`.
-
-Existing tabs are preserved. Added tabs: **Market Data** and **AI Investigation**. Timestamps in those views are shown in IST.
+Open `http://localhost:8501` in your browser. Existing tabs are preserved. Added tabs: **Market Data** and **AI Investigation**. Timestamps in those views are shown in IST.
 
 ## Professor demonstration script
 
@@ -462,3 +466,117 @@ Stop application processes, then `docker compose down` / `up -d` and recreate to
 ## Academic scope
 
 This is an academic event-detection and investigation system, not a trading product. Yahoo data is delayed unofficial data. The LLM interprets numerical evidence; it does not execute trades or invent market news.
+
+## KUSHAL's Tips
+
+### How to run the project
+
+1. Open the project folder in an IDE such as VS Code, Cursor, Antigravity, or Windsurf. Run the commands below from the project root.
+
+2. Make sure the virtual environment exists and dependencies are installed. Do this once; do not recreate the environment every run:
+
+   ```powershell
+   if (-not (Test-Path .venv\Scripts\Activate.ps1)) { python -m venv .venv }
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install -r requirements.txt
+   if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+   ```
+
+   Open four PowerShell terminals. Activate the environment in each terminal before running Python:
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+3. Start Docker Desktop and leave it running. In Terminal 1, start Kafka and PostgreSQL, create the Kafka topics, and apply the database schema:
+
+   ```powershell
+   docker compose up -d
+   Start-Sleep -Seconds 10
+   docker compose ps
+   .\scripts\setup_kafka.ps1
+   python database\migrate.py
+   ```
+
+   If Kafka or PostgreSQL is not ready yet, wait a little and retry the topic setup or migration command.
+
+4. In the same Terminal 1, configure Windows Hadoop and start Spark. Keep this terminal running:
+
+   ```powershell
+   $env:HADOOP_HOME="C:\hadoop"
+   $env:PATH="$env:HADOOP_HOME\bin;$env:PATH"
+   if (-not (Test-Path C:\hadoop\bin\winutils.exe)) { throw "winutils.exe is missing; follow the Windows Spark / Hadoop setup above." }
+   python streaming\spark_stream.py
+   ```
+
+5. In Terminal 2, run exactly one producer and keep it running:
+
+   - **Live Yahoo data:** during NSE trading sessions (normally Monday–Friday, 9:15 a.m.–3:30 p.m. IST, except market holidays), run:
+
+     ```powershell
+     python producer\producer.py
+     ```
+
+     Yahoo data can be delayed, incomplete, or unavailable; market hours do not guarantee that Yahoo will return data.
+
+   - **After-hours demo:** run:
+
+     ```powershell
+     python producer\demo_replay.py
+     ```
+
+     This replays cached Yahoo candles when available. If the cache is empty, the script tries Yahoo once to fill it; if no candles are returned, collect data during a market session or use the historical dataset instead. Demo candles are not live data.
+
+   - **Historical dataset:** make sure `data\stocks_1m_csvs.zip` exists, then run:
+
+     ```powershell
+     python producer\historical_replay.py
+     ```
+
+     The default limit is 1,000 records. For the full archive, set the limit before starting:
+
+     ```powershell
+     $env:RTSED_REPLAY_MAX_RECORDS="0"
+     python producer\historical_replay.py
+     ```
+
+     Keep live, demo, and historical data runs separate; do not run multiple producers together.
+
+6. Install Ollama if needed, then download and verify the model. Do this once; the Ollama app/server must be running when the agent is used:
+
+   ```powershell
+   ollama --version
+   ollama pull llama3.2:3b
+   ollama list
+   Invoke-RestMethod http://localhost:11434/api/tags
+   ```
+
+   If the API check cannot connect, start the Ollama app. Alternatively, run `ollama serve` in a separate PowerShell window if the app is not already hosting the server.
+
+   In Terminal 3, activate the virtual environment, select that model, and start the agent. Keep this terminal running:
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   $env:AI_PROVIDER="ollama"
+   $env:OLLAMA_BASE_URL="http://localhost:11434"
+   $env:OLLAMA_MODEL="llama3.2:3b"
+   python agent\consumer.py
+   ```
+
+7. In Terminal 4, activate the virtual environment and start the dashboard:
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   streamlit run dashboard\dashboard.py
+   ```
+
+   Open `http://localhost:8501`.
+
+8. **Optional live EDA:** use an additional terminal (a fifth terminal while the other four are running), activate the virtual environment, then run:
+
+   ```powershell
+   .\.venv\Scripts\Activate.ps1
+   python eda_live.py
+   ```
+
+   This fetches recent 1-minute Yahoo data (or falls back to the local Yahoo cache) and writes its summary and charts to `eda_live_results\`. It can fail if neither Yahoo nor the local cache provides data.

@@ -15,6 +15,7 @@ data/*.csv.gz
 
 # Generated EDA outputs
 eda_results/
+eda_live_results/
 
 # Spark runtime/checkpoint state
 streaming/checkpoint/
